@@ -194,3 +194,4 @@ Launch `Build/NBodySimulation.exe` directly on Windows with any modern GPU (Dire
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
