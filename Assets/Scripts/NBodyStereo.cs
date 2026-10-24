@@ -3,8 +3,10 @@ using UnityEngine;
 /// <summary>
 /// Cross-Eyed & Parallel Stereoscopic 3D Camera Manager.
 /// Splits the display into dual side-by-side viewports with convergence for stereoscopic 3D.
+/// Includes a central black divider stripe (1/20th of screen width) to eliminate visual crosstalk.
 /// In Cross-Eyed view:
 ///   - Left Screen Half  = Right Eye Camera (viewing from +IPD/2)
+///   - Center Stripe     = Pitch black divider (1/20 screen width)
 ///   - Right Screen Half = Left Eye Camera  (viewing from -IPD/2)
 /// Crossing eyes causes the two images to fuse in the center into a stunning 3D hologram.
 /// </summary>
@@ -16,6 +18,11 @@ public class NBodyStereo : MonoBehaviour
 
     [Tooltip("If true, Cross-Eyed mode (Right eye on left, Left eye on right). If false, Parallel mode.")]
     public bool crossEyedMode = true;
+
+    [Header("Divider Stripe")]
+    [Tooltip("Width of the central black separator stripe as a fraction of screen width (1/20 = 0.05)")]
+    [Range(0.0f, 0.2f)]
+    public float stripeWidthFraction = 0.05f; // Exactly 1/20th of screen width
 
     [Header("Optical Parameters")]
     [Tooltip("Interpupillary distance (physical separation between virtual eyes)")]
@@ -86,7 +93,6 @@ public class NBodyStereo : MonoBehaviour
         }
 
         // --- Responsive Depth / IPD Adjustments ---
-        // Single tap adjustment:
         if (Input.GetKeyDown(KeyCode.UpArrow))
         {
             eyeSeparation = Mathf.Clamp(eyeSeparation + 0.8f, 0.2f, 40.0f);
@@ -96,7 +102,6 @@ public class NBodyStereo : MonoBehaviour
             eyeSeparation = Mathf.Clamp(eyeSeparation - 0.8f, 0.2f, 40.0f);
         }
 
-        // Continuous hold adjustment:
         float ipdRate = (Input.GetKey(KeyCode.LeftShift) ? 14.0f : 5.0f) * Time.unscaledDeltaTime;
         if (Input.GetKey(KeyCode.UpArrow))
         {
@@ -108,7 +113,6 @@ public class NBodyStereo : MonoBehaviour
         }
 
         // --- Focal / Convergence Distance Adjustments ---
-        // Single tap:
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
             convergenceDistance = Mathf.Clamp(convergenceDistance + 10.0f, 10.0f, 600.0f);
@@ -118,7 +122,6 @@ public class NBodyStereo : MonoBehaviour
             convergenceDistance = Mathf.Clamp(convergenceDistance - 10.0f, 10.0f, 600.0f);
         }
 
-        // Continuous hold:
         float convRate = (Input.GetKey(KeyCode.LeftShift) ? 70.0f : 25.0f) * Time.unscaledDeltaTime;
         if (Input.GetKey(KeyCode.RightArrow))
         {
@@ -167,17 +170,22 @@ public class NBodyStereo : MonoBehaviour
         if (leftEyeCam == null || rightEyeCam == null)
             return;
 
+        // Central divider stripe width (1/20 = 0.05)
+        float halfStripe = stripeWidthFraction * 0.5f; // 0.025
+        float eyeWidth = 0.5f - halfStripe;            // 0.475
+        float rightStartX = 0.5f + halfStripe;         // 0.525
+
         if (crossEyedMode)
         {
             // CROSS-EYED: Right eye on Left half, Left eye on Right half
-            rightEyeCam.rect = new Rect(0.0f, 0.0f, 0.5f, 1.0f);
-            leftEyeCam.rect  = new Rect(0.5f, 0.0f, 0.5f, 1.0f);
+            rightEyeCam.rect = new Rect(0.0f, 0.0f, eyeWidth, 1.0f);
+            leftEyeCam.rect  = new Rect(rightStartX, 0.0f, eyeWidth, 1.0f);
         }
         else
         {
             // PARALLEL: Left eye on Left half, Right eye on Right half
-            leftEyeCam.rect  = new Rect(0.0f, 0.0f, 0.5f, 1.0f);
-            rightEyeCam.rect = new Rect(0.5f, 0.0f, 0.5f, 1.0f);
+            leftEyeCam.rect  = new Rect(0.0f, 0.0f, eyeWidth, 1.0f);
+            rightEyeCam.rect = new Rect(rightStartX, 0.0f, eyeWidth, 1.0f);
         }
     }
 
@@ -202,15 +210,25 @@ public class NBodyStereo : MonoBehaviour
         if (!isStereoActive)
             return;
 
-        // Render sleek, dual-fused HUD at the bottom of both eye viewports
-        // Because it renders symmetrically in both viewports, it naturally fuses in 3D!
+        // 1. Draw solid central black divider stripe (exactly 1/20th of screen width)
+        float stripeWidthPixels = Screen.width * stripeWidthFraction;
+        float stripeX = (Screen.width - stripeWidthPixels) * 0.5f;
+
+        Color prevColor = GUI.color;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(stripeX, 0, stripeWidthPixels, Screen.height), Texture2D.whiteTexture);
+        GUI.color = prevColor;
+
+        // 2. Render sleek, dual-fused HUD centered in each eye's viewport
+        float halfStripe = stripeWidthFraction * 0.5f;
+        float eyeWidth = 0.5f - halfStripe;
+
+        float leftCenterX = (eyeWidth * 0.5f) * Screen.width;
+        float rightCenterX = (0.5f + halfStripe + eyeWidth * 0.5f) * Screen.width;
+
         float panelWidth = 370.0f;
         float panelHeight = 50.0f;
         float y = Screen.height - panelHeight - 15.0f;
-
-        // Left viewport center = 25% screen width; Right viewport center = 75% screen width
-        float leftCenterX = Screen.width * 0.25f;
-        float rightCenterX = Screen.width * 0.75f;
 
         DrawFusedStereoHUD(new Rect(leftCenterX - panelWidth * 0.5f, y, panelWidth, panelHeight));
         DrawFusedStereoHUD(new Rect(rightCenterX - panelWidth * 0.5f, y, panelWidth, panelHeight));

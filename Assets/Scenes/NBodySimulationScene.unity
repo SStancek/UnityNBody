@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &250879678
+--- !u!1 &1390220462
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,82 +127,11 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 250879681}
-  - component: {fileID: 250879680}
-  - component: {fileID: 250879679}
-  m_Layer: 0
-  m_Name: NBody_Simulation
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &250879679
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 250879678}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b491bfe392c8db04e8f6e90e56b2bbfc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::NBodyUI
-  controller: {fileID: 250879680}
-  simCamera: {fileID: 591054702}
-  stereo: {fileID: 591054701}
---- !u!114 &250879680
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 250879678}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6c31b899ebcc31d47978f54efc0767a5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::NBodyController
-  bodyCount: 65536
-  initialPreset: 0
-  gravitationalConstant: 1
-  softening: 0.85
-  timeScale: 1
-  damping: 1
-  nbodyCompute: {fileID: 7200000, guid: 6813f4a789e74a143bfd140a910fb7c2, type: 3}
-  particleMaterial: {fileID: 2100000, guid: a5016a01a3a37154dbe505ce983f12c8, type: 2}
-  particleSize: 0.85
-  maxSpeedForColor: 20
-  glowIntensity: 2.5
---- !u!4 &250879681
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 250879678}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &591054700
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 591054705}
-  - component: {fileID: 591054704}
-  - component: {fileID: 591054703}
-  - component: {fileID: 591054702}
-  - component: {fileID: 591054701}
+  - component: {fileID: 1390220467}
+  - component: {fileID: 1390220466}
+  - component: {fileID: 1390220465}
+  - component: {fileID: 1390220464}
+  - component: {fileID: 1390220463}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -210,13 +139,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &591054701
+--- !u!114 &1390220463
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591054700}
+  m_GameObject: {fileID: 1390220462}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4db39258b55a64c449f86a72c2881bec, type: 3}
@@ -224,16 +153,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::NBodyStereo
   isStereoActive: 0
   crossEyedMode: 1
+  stripeWidthFraction: 0.05
   eyeSeparation: 4.5
   convergenceDistance: 140
   toggleHotkey: 120
---- !u!114 &591054702
+--- !u!114 &1390220464
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591054700}
+  m_GameObject: {fileID: 1390220462}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e810714b651a58f4f9601210c295b724, type: 3}
@@ -252,21 +182,21 @@ MonoBehaviour:
   zoomSpeed: 25
   minOrbitDistance: 5
   maxOrbitDistance: 2000
---- !u!81 &591054703
+--- !u!81 &1390220465
 AudioListener:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591054700}
+  m_GameObject: {fileID: 1390220462}
   m_Enabled: 1
---- !u!20 &591054704
+--- !u!20 &1390220466
 Camera:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591054700}
+  m_GameObject: {fileID: 1390220462}
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
@@ -311,16 +241,87 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!4 &591054705
+--- !u!4 &1390220467
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 591054700}
+  m_GameObject: {fileID: 1390220462}
   serializedVersion: 2
   m_LocalRotation: {x: 0.19080901, y: 0, z: 0, w: 0.9816272}
   m_LocalPosition: {x: 0, y: 60, z: -140}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1571121234
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1571121237}
+  - component: {fileID: 1571121236}
+  - component: {fileID: 1571121235}
+  m_Layer: 0
+  m_Name: NBody_Simulation
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1571121235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1571121234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b491bfe392c8db04e8f6e90e56b2bbfc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NBodyUI
+  controller: {fileID: 1571121236}
+  simCamera: {fileID: 1390220464}
+  stereo: {fileID: 1390220463}
+--- !u!114 &1571121236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1571121234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c31b899ebcc31d47978f54efc0767a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NBodyController
+  bodyCount: 65536
+  initialPreset: 0
+  gravitationalConstant: 1
+  softening: 0.85
+  timeScale: 1
+  damping: 1
+  nbodyCompute: {fileID: 7200000, guid: 6813f4a789e74a143bfd140a910fb7c2, type: 3}
+  particleMaterial: {fileID: 2100000, guid: a5016a01a3a37154dbe505ce983f12c8, type: 2}
+  particleSize: 0.85
+  maxSpeedForColor: 20
+  glowIntensity: 2.5
+--- !u!4 &1571121237
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1571121234}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -330,5 +331,5 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 591054705}
-  - {fileID: 250879681}
+  - {fileID: 1390220467}
+  - {fileID: 1571121237}
