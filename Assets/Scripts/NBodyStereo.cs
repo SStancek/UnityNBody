@@ -1,19 +1,59 @@
 using UnityEngine;
 
 /// <summary>
-/// Cross-Eyed & Parallel Stereoscopic 3D Camera Manager.
-/// Splits the display into dual side-by-side viewports with convergence for stereoscopic 3D.
-/// Includes a central black divider stripe (1/20th of screen width) to eliminate visual crosstalk.
-/// In Cross-Eyed view:
-///   - Left Screen Half  = Right Eye Camera (viewing from +IPD/2)
-///   - Center Stripe     = Pitch black divider (1/20 screen width)
-///   - Right Screen Half = Left Eye Camera  (viewing from -IPD/2)
-/// Crossing eyes causes the two images to fuse in the center into a stunning 3D hologram.
+/// =========================================================================================
+/// STEREOSCOPIC 3D CAMERA MANAGER (CROSS-EYED & PARALLEL STEREOGRAMS)
+/// =========================================================================================
+/// 
+/// [CODING GUIDE: OPTICAL FOUNDATIONS & VIEWPORT MATHEMATICS]
+/// 
+/// 1. HOW STEREOSCOPIC VISION WORKS:
+///    Human depth perception (stereopsis) relies on horizontal binocular disparity: the two
+///    eyes observe the world from slightly different vantage points (~63mm apart in humans).
+///    By rendering the virtual scene from two virtual cameras offset horizontally by an
+///    interpupillary distance (IPD), each eye receives a unique perspective.
+/// 
+/// 2. CROSS-EYED VS. PARALLEL VIEWING:
+///    - Parallel Viewing (Wall-Eyed / Magic Eye):
+///      Left Eye looks at Left Image, Right Eye looks at Right Image.
+///      Eyes diverge towards infinity. Challenging for large displays because human eyes cannot
+///      diverge outward beyond parallel without severe strain.
+///    - Cross-Eyed Viewing (Recommended for Computer Monitors):
+///      The user crosses their lines of sight in front of the screen.
+///      - Left Eye line-of-sight intersects the RIGHT screen half.
+///      - Right Eye line-of-sight intersects the LEFT screen half.
+///      Therefore, the LEFT screen half MUST display the RIGHT eye's camera, and the
+///      RIGHT screen half MUST display the LEFT eye's camera!
+/// 
+/// 3. VIEWPORT SPLITTING WITH CENTRAL SEPARATOR STRIPE:
+///    Unity camera viewports are defined in normalized screen coordinates [0, 1]:
+///    `Camera.rect = new Rect(x, y, width, height)`
+///    To eliminate peripheral visual cross-talk between the inner edges of both images,
+///    we place a solid black stripe of width S = 1/20 (5% of screen width):
+///      - Left Viewport:   x = 0.000, width = 0.5 - S/2 = 0.475 (47.5% width)
+///      - Central Stripe:  x = 0.475, width = S         = 0.050 ( 5.0% width)
+///      - Right Viewport:  x = 0.525, width = 0.5 - S/2 = 0.475 (47.5% width)
+/// 
+/// 4. CONVERGENCE & ZERO-PARALLAX PLANE:
+///    Both eye cameras toe-in towards a focal convergence point at distance D:
+///    - Objects located exactly at distance D have zero horizontal parallax (appear at screen depth).
+///    - Objects closer than D pop out into negative parallax (floating in front of the screen).
+///    - Objects further than D sink into positive parallax (receding into deep space).
+/// 
+/// 5. DUAL-FUSED 3D HUD:
+///    By rendering an identical status overlay at the exact optical centers of both viewports,
+///    the brain fuses the two text labels into a single 3D status HUD floating in space!
+/// 
+/// =========================================================================================
 /// </summary>
 public class NBodyStereo : MonoBehaviour
 {
-    [Header("Stereo Settings")]
-    [Tooltip("Enable or disable stereoscopic split-screen")]
+    // =====================================================================================
+    // INSPECTOR CONFIGURATION
+    // =====================================================================================
+
+    [Header("Stereo State")]
+    [Tooltip("Enable or disable stereoscopic split-screen mode")]
     public bool isStereoActive = false;
 
     [Tooltip("If true, Cross-Eyed mode (Right eye on left, Left eye on right). If false, Parallel mode.")]
@@ -22,25 +62,33 @@ public class NBodyStereo : MonoBehaviour
     [Header("Divider Stripe")]
     [Tooltip("Width of the central black separator stripe as a fraction of screen width (1/20 = 0.05)")]
     [Range(0.0f, 0.2f)]
-    public float stripeWidthFraction = 0.05f; // Exactly 1/20th of screen width
+    public float stripeWidthFraction = 0.05f; // Exactly 1/20th of total screen width
 
     [Header("Optical Parameters")]
-    [Tooltip("Interpupillary distance (physical separation between virtual eyes)")]
+    [Tooltip("Virtual Interpupillary Distance (IPD) - physical separation between virtual eyes")]
     [Range(0.2f, 40.0f)]
     public float eyeSeparation = 4.5f;
 
-    [Tooltip("Distance at which the eyes converge (focal plane of zero parallax)")]
+    [Tooltip("Convergence distance - distance to the zero-parallax focal plane where eyes intersect")]
     [Range(10.0f, 600.0f)]
     public float convergenceDistance = 140.0f;
 
     [Header("Hotkey")]
+    [Tooltip("Hotkey used to toggle stereoscopy on and off")]
     public KeyCode toggleHotkey = KeyCode.X;
 
-    // References
+    // =====================================================================================
+    // CAMERA REFERENCES & STATE
+    // =====================================================================================
+
     private Camera mainCamera;
     private Camera leftEyeCam;
     private Camera rightEyeCam;
 
+    /// <summary>
+    /// Read-only accessor indicating whether stereoscopic mode is currently active.
+    /// Used by NBodyUI to automatically hide the 2D menu panel during 3D immersion.
+    /// </summary>
     public bool IsStereoActive => isStereoActive;
 
     private void Awake()
@@ -53,6 +101,10 @@ public class NBodyStereo : MonoBehaviour
         UpdateCameraStates();
     }
 
+    /// <summary>
+    /// Instantiates two dedicated sub-cameras as children of the main camera rig.
+    /// Childing to mainCamera ensures they automatically inherit 6-DOF position and rotation.
+    /// </summary>
     private void CreateEyeCameras()
     {
         // 1. Create Left Eye Camera
@@ -61,6 +113,8 @@ public class NBodyStereo : MonoBehaviour
         leftEyeCam = leftGo.AddComponent<Camera>();
         leftEyeCam.CopyFrom(mainCamera);
         leftEyeCam.enabled = false;
+
+        // Strip duplicate AudioListener to avoid Unity console warnings
         AudioListener leftListener = leftGo.GetComponent<AudioListener>();
         if (leftListener != null) Destroy(leftListener);
 
@@ -70,13 +124,14 @@ public class NBodyStereo : MonoBehaviour
         rightEyeCam = rightGo.AddComponent<Camera>();
         rightEyeCam.CopyFrom(mainCamera);
         rightEyeCam.enabled = false;
+
         AudioListener rightListener = rightGo.GetComponent<AudioListener>();
         if (rightListener != null) Destroy(rightListener);
     }
 
     private void Update()
     {
-        // Toggle stereoscopy with hotkey (Default: 'X')
+        // Hotkey: Toggle Stereoscopic 3D mode
         if (Input.GetKeyDown(toggleHotkey))
         {
             SetStereoMode(!isStereoActive);
@@ -85,14 +140,17 @@ public class NBodyStereo : MonoBehaviour
         if (!isStereoActive)
             return;
 
-        // Toggle between Cross-Eyed and Parallel with 'Z'
+        // Hotkey 'Z': Toggle between Cross-Eyed and Parallel stereogram modes
         if (Input.GetKeyDown(KeyCode.Z))
         {
             crossEyedMode = !crossEyedMode;
             UpdateViewportRects();
         }
 
-        // --- Responsive Depth / IPD Adjustments ---
+        // ---------------------------------------------------------------------------------
+        // Dynamic Depth (IPD) Adjustments
+        // ---------------------------------------------------------------------------------
+        // Discrete key taps for immediate, distinct visual feedback
         if (Input.GetKeyDown(KeyCode.UpArrow))
         {
             eyeSeparation = Mathf.Clamp(eyeSeparation + 0.8f, 0.2f, 40.0f);
@@ -102,6 +160,7 @@ public class NBodyStereo : MonoBehaviour
             eyeSeparation = Mathf.Clamp(eyeSeparation - 0.8f, 0.2f, 40.0f);
         }
 
+        // Smooth continuous hold (hold LeftShift for accelerated speed)
         float ipdRate = (Input.GetKey(KeyCode.LeftShift) ? 14.0f : 5.0f) * Time.unscaledDeltaTime;
         if (Input.GetKey(KeyCode.UpArrow))
         {
@@ -112,7 +171,10 @@ public class NBodyStereo : MonoBehaviour
             eyeSeparation = Mathf.Clamp(eyeSeparation - ipdRate, 0.2f, 40.0f);
         }
 
-        // --- Focal / Convergence Distance Adjustments ---
+        // ---------------------------------------------------------------------------------
+        // Dynamic Focal Convergence Distance Adjustments
+        // ---------------------------------------------------------------------------------
+        // Discrete key taps
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
             convergenceDistance = Mathf.Clamp(convergenceDistance + 10.0f, 10.0f, 600.0f);
@@ -122,6 +184,7 @@ public class NBodyStereo : MonoBehaviour
             convergenceDistance = Mathf.Clamp(convergenceDistance - 10.0f, 10.0f, 600.0f);
         }
 
+        // Smooth continuous hold
         float convRate = (Input.GetKey(KeyCode.LeftShift) ? 70.0f : 25.0f) * Time.unscaledDeltaTime;
         if (Input.GetKey(KeyCode.RightArrow))
         {
@@ -132,15 +195,22 @@ public class NBodyStereo : MonoBehaviour
             convergenceDistance = Mathf.Clamp(convergenceDistance - convRate, 10.0f, 600.0f);
         }
 
+        // Synchronize eye transforms based on updated IPD and convergence distance
         UpdateEyeTransforms();
     }
 
+    /// <summary>
+    /// Enables or disables stereoscopic rendering.
+    /// </summary>
     public void SetStereoMode(bool active)
     {
         isStereoActive = active;
         UpdateCameraStates();
     }
 
+    /// <summary>
+    /// Activates either the single main camera (mono) or the dual eye cameras (stereo).
+    /// </summary>
     private void UpdateCameraStates()
     {
         if (mainCamera == null || leftEyeCam == null || rightEyeCam == null)
@@ -148,6 +218,7 @@ public class NBodyStereo : MonoBehaviour
 
         if (isStereoActive)
         {
+            // Disable main camera, enable dual stereoscopic sub-cameras
             mainCamera.enabled = false;
             leftEyeCam.enabled = true;
             rightEyeCam.enabled = true;
@@ -157,6 +228,7 @@ public class NBodyStereo : MonoBehaviour
         }
         else
         {
+            // Restore standard monoscopic fullscreen viewport
             mainCamera.enabled = true;
             mainCamera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
 
@@ -165,6 +237,10 @@ public class NBodyStereo : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Calculates the normalized viewport rectangles for both eye cameras,
+    /// inserting the 1/20th screen-width central black divider stripe.
+    /// </summary>
     private void UpdateViewportRects()
     {
         if (leftEyeCam == null || rightEyeCam == null)
@@ -172,45 +248,59 @@ public class NBodyStereo : MonoBehaviour
 
         // Central divider stripe width (1/20 = 0.05)
         float halfStripe = stripeWidthFraction * 0.5f; // 0.025
-        float eyeWidth = 0.5f - halfStripe;            // 0.475
-        float rightStartX = 0.5f + halfStripe;         // 0.525
+        float eyeWidth = 0.5f - halfStripe;            // 0.475 (47.5% width per eye)
+        float rightStartX = 0.5f + halfStripe;         // 0.525 (starts after black stripe)
 
         if (crossEyedMode)
         {
-            // CROSS-EYED: Right eye on Left half, Left eye on Right half
+            // CROSS-EYED CONFIGURATION:
+            // Left screen half  = RIGHT eye camera (viewing from +IPD/2)
+            // Right screen half = LEFT eye camera  (viewing from -IPD/2)
             rightEyeCam.rect = new Rect(0.0f, 0.0f, eyeWidth, 1.0f);
             leftEyeCam.rect  = new Rect(rightStartX, 0.0f, eyeWidth, 1.0f);
         }
         else
         {
-            // PARALLEL: Left eye on Left half, Right eye on Right half
+            // PARALLEL CONFIGURATION:
+            // Left screen half  = LEFT eye camera  (viewing from -IPD/2)
+            // Right screen half = RIGHT eye camera (viewing from +IPD/2)
             leftEyeCam.rect  = new Rect(0.0f, 0.0f, eyeWidth, 1.0f);
             rightEyeCam.rect = new Rect(rightStartX, 0.0f, eyeWidth, 1.0f);
         }
     }
 
+    /// <summary>
+    /// Updates eye positions and toe-in convergence rotations relative to the camera rig.
+    /// </summary>
     private void UpdateEyeTransforms()
     {
         float halfIpd = eyeSeparation * 0.5f;
 
+        // Position virtual eyes along the local X-axis (interpupillary baseline)
         Vector3 leftPosLocal  = new Vector3(-halfIpd, 0.0f, 0.0f);
         Vector3 rightPosLocal = new Vector3( halfIpd, 0.0f, 0.0f);
 
         leftEyeCam.transform.localPosition  = leftPosLocal;
         rightEyeCam.transform.localPosition = rightPosLocal;
 
+        // Convergence point lying directly along the central line of sight (local Z)
         Vector3 convergencePointLocal = new Vector3(0.0f, 0.0f, convergenceDistance);
 
+        // Toe-in rotation: Aim both cameras directly toward the focal convergence point.
+        // This ensures objects at 'convergenceDistance' align at identical horizontal pixel positions.
         leftEyeCam.transform.localRotation  = Quaternion.LookRotation(convergencePointLocal - leftPosLocal, Vector3.up);
         rightEyeCam.transform.localRotation = Quaternion.LookRotation(convergencePointLocal - rightPosLocal, Vector3.up);
     }
 
+    /// <summary>
+    /// Renders the central black divider stripe and the dual-fused 3D stereoscopic status overlay.
+    /// </summary>
     private void OnGUI()
     {
         if (!isStereoActive)
             return;
 
-        // 1. Draw solid central black divider stripe (exactly 1/20th of screen width)
+        // 1. Draw Solid Central Black Divider Stripe (1/20th of screen width)
         float stripeWidthPixels = Screen.width * stripeWidthFraction;
         float stripeX = (Screen.width - stripeWidthPixels) * 0.5f;
 
@@ -219,7 +309,9 @@ public class NBodyStereo : MonoBehaviour
         GUI.DrawTexture(new Rect(stripeX, 0, stripeWidthPixels, Screen.height), Texture2D.whiteTexture);
         GUI.color = prevColor;
 
-        // 2. Render sleek, dual-fused HUD centered in each eye's viewport
+        // 2. Render Sleek, Dual-Fused HUD Centered in Each Viewport
+        // Because the status box is rendered at identical relative positions in both eyes,
+        // it naturally fuses into a sharp 3D text panel when crossing eyes!
         float halfStripe = stripeWidthFraction * 0.5f;
         float eyeWidth = 0.5f - halfStripe;
 
@@ -234,6 +326,9 @@ public class NBodyStereo : MonoBehaviour
         DrawFusedStereoHUD(new Rect(rightCenterX - panelWidth * 0.5f, y, panelWidth, panelHeight));
     }
 
+    /// <summary>
+    /// Helper method to draw a single half of the stereoscopic status bar.
+    /// </summary>
     private void DrawFusedStereoHUD(Rect rect)
     {
         GUI.color = new Color(0.0f, 0.0f, 0.0f, 0.65f);

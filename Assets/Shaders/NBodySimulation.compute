@@ -1,45 +1,85 @@
 #pragma kernel IntegrateNBody
 
 // =========================================================================================
-// GPU N-Body Gravitational Physics Kernel (HLSL DirectCompute)
-// Optimized for Massive Parallel Execution with Shared Memory Tiling & Symplectic Integration
+// GPU N-BODY GRAVITATIONAL PHYSICS KERNEL (HLSL DirectCompute)
+// =========================================================================================
+//
+// [CODING GUIDE: CORE CONCEPTS & ARCHITECTURE]
+//
+// 1. THE N-BODY PROBLEM & COMPLEXITY:
+//    In a direct all-pairs gravitational simulation of N bodies, every body experiences the
+//    gravitational pull of every other body.
+//    - Algorithmic Complexity: O(N^2) pairwise force evaluations per frame.
+//    - For N = 65,536 bodies: N^2 = 4,294,967,296 interactions every frame!
+//    - At 60 FPS, this equals ~257 BILLION pairwise interactions computed per second.
+//
+// 2. THE HARDWARE BOTTLENECK IN NAIVE IMPLEMENTATIONS:
+//    If each GPU thread loops through all N bodies in global VRAM, the memory subsystem must
+//    deliver billions of reads per frame, quickly exceeding VRAM bandwidth (saturating the bus)
+//    and starving the compute ALUs.
+//
+// 3. THE SOLUTION: THREADGROUP SHARED MEMORY CACHING (LDS TILING):
+//    - DirectCompute provides on-chip Local Data Share (LDS) shared across a threadgroup.
+//    - LDS runs at register-file speeds (~terabytes/sec aggregate bandwidth).
+//    - With a tile size of BLOCK_SIZE = 256, all 256 threads in a group cooperatively load
+//      a 256-body slice into on-chip cache ONCE, synchronize, and then all 256 threads
+//      evaluate gravity against that cached slice entirely in fast memory.
+//    - Bandwidth Reduction: Global memory reads decrease by a factor of 256 (O(N^2 / 256)).
+//
+// 4. CRITICAL DIRECT3D 12 / VULKAN RULE ON BARRIERS (CONVERGENT EXECUTION):
+//    `GroupMemoryBarrierWithGroupSync()` MUST NEVER be placed inside divergent code branches
+//    (such as `if (i >= _BodyCount) return;`). All threads within the workgroup must hit the
+//    barrier in uniform lockstep. Violating this causes D3D12 driver-level kernel invalidation.
+//
 // =========================================================================================
 
+// Stride = 32 bytes (16-byte aligned for optimal GPU cacheline coalescing)
 struct Body
 {
-    float3 position;
-    float mass;
-    float3 velocity;
-    float padding; // Stores speed for velocity-based heatmap coloring in the vertex shader
+    float3 position; // 12 bytes: World-space position (X, Y, Z)
+    float mass;      //  4 bytes: Gravitational mass
+    float3 velocity; // 12 bytes: Velocity vector (Vx, Vy, Vz)
+    float padding;   //  4 bytes: 16-byte alignment pad + used to pass particle speed to vertex shader
 };
 
+// Double-buffering buffers:
+// _BodiesRead holds the immutable state at time t.
+// _BodiesWrite receives the newly integrated state at time t + dt.
+// This prevents read-write race conditions between threads executing concurrently.
 StructuredBuffer<Body> _BodiesRead;
 RWStructuredBuffer<Body> _BodiesWrite;
 
-// Simulation Uniform Parameters (Unity ComputeShader maps global HLSL variables directly)
-uint _BodyCount;         // Total active particles
-float _DeltaTime;        // Numerical timestep (dt)
-float _G;                // Gravitational Constant
-float _SofteningSquared; // epsilon^2 (avoids infinite force singularity during close flybys)
-float _Damping;          // Numerical velocity damping (1.0 = none)
+// Simulation Uniform Parameters
+// NOTE: In Unity Compute Shaders, declare uniforms at global scope (not inside a named cbuffer)
+// so that ComputeShader.SetFloat() and ComputeShader.SetInt() map directly via reflection.
+uint _BodyCount;         // Total active particles in the simulation
+float _DeltaTime;        // Numerical integration timestep (dt in seconds)
+float _G;                // Universal Gravitational Constant
+float _SofteningSquared; // epsilon^2: Plummer softening parameter to prevent infinite acceleration
+float _Damping;          // Numerical velocity damping (1.0 = frictionless vacuum)
 
-// Threadgroup configuration: 256 threads matches NVIDIA/AMD hardware warp/wavefront multiples
+// Threadgroup block size:
+// 256 threads matches NVIDIA warp (32 threads) and AMD wavefront (64 threads) hardware multiples.
 #define BLOCK_SIZE 256
 
-// Threadgroup Shared Memory (LDS - Local Data Share).
-// Ultra-fast on-chip memory shared across all 256 threads in this workgroup.
-// Stores (pos.x, pos.y, pos.z, mass) for a tile of 256 celestial bodies.
+// Threadgroup Shared Memory (LDS):
+// Shared exclusively among all 256 threads in this specific workgroup.
+// Stores float4(pos.x, pos.y, pos.z, mass) for 256 bodies. Total size: 256 * 16 bytes = 4 KB.
 groupshared float4 s_sharedPosMass[BLOCK_SIZE];
 
 [numthreads(BLOCK_SIZE, 1, 1)]
 void IntegrateNBody(
-    uint3 id : SV_DispatchThreadID,
-    uint3 groupThreadId : SV_GroupThreadID
+    uint3 id : SV_DispatchThreadID,        // Global thread index across the entire grid (particle index)
+    uint3 groupThreadId : SV_GroupThreadID // Local thread index within this threadgroup (0..255)
 )
 {
     uint i = id.x;
 
-    // Load this thread's particle state
+    // ---------------------------------------------------------------------------------
+    // Step 1: Thread-Local Particle Setup
+    // ---------------------------------------------------------------------------------
+    // All threads proceed into the loop to guarantee uniform barrier synchronization,
+    // but only active threads within the body count accumulate real physics updates.
     float3 myPos = float3(0.0f, 0.0f, 0.0f);
     float3 myVel = float3(0.0f, 0.0f, 0.0f);
     float myMass = 0.0f;
@@ -56,16 +96,16 @@ void IntegrateNBody(
     float3 totalAcceleration = float3(0.0f, 0.0f, 0.0f);
     uint numTiles = (_BodyCount + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    // =====================================================================================
-    // TILED GRAVITATIONAL ACCELERATION SUMMATION
-    // All 256 threads in the threadgroup cooperatively load a 256-particle tile into on-chip
-    // shared memory ONCE, and then compute pairwise gravity from fast cache.
-    // All threads in the threadgroup must participate uniformly in barriers without early returns.
-    // =====================================================================================
+    // ---------------------------------------------------------------------------------
+    // Step 2: Cooperative LDS Tiled Gravitational Summation
+    // ---------------------------------------------------------------------------------
+    // We iterate over all particles in slices of BLOCK_SIZE (256 bodies per tile).
     for (uint tile = 0; tile < numTiles; ++tile)
     {
         uint loadIndex = tile * BLOCK_SIZE + groupThreadId.x;
 
+        // Cooperative Global -> LDS Load:
+        // Each of the 256 threads loads exactly ONE body into shared memory.
         if (loadIndex < _BodyCount)
         {
             Body otherBody = _BodiesRead[loadIndex];
@@ -73,38 +113,58 @@ void IntegrateNBody(
         }
         else
         {
+            // Zero-padding for out-of-bounds threads when bodyCount is not a clean multiple
             s_sharedPosMass[groupThreadId.x] = float4(0.0f, 0.0f, 0.0f, 0.0f);
         }
 
-        // Convergent barrier: all 256 threads wait until the shared memory tile is fully written
+        // BARRIER 1: Synchronize Threadgroup
+        // Guarantees all 256 threads have written their body into s_sharedPosMass before
+        // any thread starts reading from it.
         GroupMemoryBarrierWithGroupSync();
 
-        // Accumulate gravitational forces from all 256 bodies in this shared memory tile
+        // Gravitational Interaction Inner Loop:
+        // Unrolling by 16 instructs the shader compiler to emit pipelined fused-multiply-add
+        // (FMA) instructions, saturating the GPU execution ports.
         [unroll(16)]
         for (uint j = 0; j < BLOCK_SIZE; ++j)
         {
             float4 other = s_sharedPosMass[j];
-            float3 r = other.xyz - myPos;
+            float3 r = other.xyz - myPos; // Displacement vector: r = pos_other - pos_self
 
-            // r^2 + epsilon^2
+            // Plummer Gravitational Softening:
+            // Classical Newton gravity: F = G * m1 * m2 / |r|^2 -> blows up to infinity as |r| -> 0!
+            // In discrete simulation, close flybys cause numerical explosion without softening.
+            // Softened distance squared: distSq = |r|^2 + epsilon^2
             float distSq = dot(r, r) + _SofteningSquared;
 
-            // 1 / (distSq)^(3/2) using single-cycle rsqrt instruction
+            // Compute inverse distance cubed: 1 / (distSq)^(3/2)
+            // rsqrt(x) computes 1.0 / sqrt(x) in a single fast GPU hardware cycle.
             float invDist = rsqrt(distSq);
             float invDistCube = invDist * invDist * invDist;
 
+            // Acceleration contribution: a = G * m_other * r / (distSq + eps^2)^(3/2)
             totalAcceleration += r * (_G * other.w * invDistCube);
         }
 
-        // Convergent barrier: ensure all reads finish before next tile iteration overwrites cache
+        // BARRIER 2: Synchronize Threadgroup
+        // Guarantees all 256 threads have finished reading the current tile before the
+        // next iteration overwrites s_sharedPosMass.
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // =====================================================================================
-    // SYMPLECTIC EULER / LEAPFROG INTEGRATION
-    // Update velocity first, then update position using the NEW velocity.
-    // Preserves energy in Hamiltonian dynamical systems.
-    // =====================================================================================
+    // ---------------------------------------------------------------------------------
+    // Step 3: Symplectic Leapfrog Integration
+    // ---------------------------------------------------------------------------------
+    // Standard Explicit Euler:
+    //   x(t + dt) = x(t) + v(t) * dt
+    //   v(t + dt) = v(t) + a(t) * dt
+    // Explicit Euler is non-symplectic: orbital energy drifts outward, causing galaxies to
+    // artificially expand and disintegrate over time.
+    //
+    // Semi-Implicit / Symplectic Euler (Velocity-Verlet / Leapfrog):
+    //   v(t + dt) = (v(t) + a(t) * dt) * damping
+    //   x(t + dt) = x(t) + v(t + dt) * dt  <-- Uses UPDATED velocity!
+    // Preserves phase-space volume (Liouville's theorem) and keeps orbits stable indefinitely.
     if (activeThread)
     {
         float3 newVel = (myVel + totalAcceleration * _DeltaTime) * _Damping;
@@ -114,7 +174,7 @@ void IntegrateNBody(
         updatedBody.position = newPos;
         updatedBody.mass = myMass;
         updatedBody.velocity = newVel;
-        updatedBody.padding = length(newVel); // Speed for shader color mapping
+        updatedBody.padding = length(newVel); // Pack scalar speed into padding for vertex shader
 
         _BodiesWrite[i] = updatedBody;
     }
